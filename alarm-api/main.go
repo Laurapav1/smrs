@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
@@ -11,8 +12,23 @@ import (
 
 var client MQTT.Client
 var blood_sugar float64
+var logger Logger
+
+type Logger struct {
+	logLevel string
+}
+
+func (l *Logger) Debug(str string, a ...any) {
+	if l.logLevel == "debug" {
+		fmt.Printf(str + "\n", a)
+	}
+}
 
 func main() {
+	logger = Logger{
+		logLevel: os.Getenv("LOG_LEVEL"),
+	}
+
 	broker := "tcp://broker:1883"
 	clientID := "go_mqtt_subscriber"
 
@@ -30,6 +46,7 @@ func main() {
 	}
 
 	client.Subscribe("test/topic", 0, message_received)
+	logger.Debug("Successfully subscribed to topic: test/topic")
 
 	r := gin.Default()
 	r.GET("/insulin-alarm", insulin_alarm)
@@ -37,17 +54,26 @@ func main() {
 }
 
 func message_received(client MQTT.Client, message MQTT.Message) {
-	fmt.Println(message.Payload())
+	// Convert message payload to string
 	str := string(message.Payload())
-	blood_sugar, err := strconv.ParseFloat(str, 64)
+
+	// Parse the blood sugar level from the message payload
+	parsedBloodSugar, err := strconv.ParseFloat(str, 64)
 	if err != nil {
-		panic(err)
+		fmt.Println("Error parsing blood sugar value:", err)
+		return
 	}
-	fmt.Println(blood_sugar)
+
+	// Update the global blood_sugar variable
+	blood_sugar = parsedBloodSugar
+
+	// Log the received blood sugar value
+	logger.Debug("Received blood sugar level: %f", blood_sugar)
 }
 
 func insulin_alarm(c *gin.Context) {
-	if blood_sugar > 10 {
+
+	if blood_sugar > 20 {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "blood sugar too high",
 		})
