@@ -7,11 +7,12 @@ import (
 	"strconv"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 var client MQTT.Client
-var blood_sugar float64
+var blood_sugar float64 = 7
 var logger Logger
 
 type Logger struct {
@@ -20,7 +21,7 @@ type Logger struct {
 
 func (l *Logger) Debug(str string, a ...any) {
 	if l.logLevel == "debug" {
-		fmt.Printf(str + "\n", a)
+		fmt.Printf(str+"\n", a...)
 	}
 }
 
@@ -32,15 +33,15 @@ func main() {
 	broker := "tcp://broker:1883"
 	clientID := "go_mqtt_subscriber"
 
-	// Opret MQTT-klientens forbindelsesindstillinger
+	// MQTT client options
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(broker)
 	opts.SetClientID(clientID)
 
-	// Opret en ny MQTT-klient
+	// Create a new MQTT client
 	client = MQTT.NewClient(opts)
 
-	// Opret forbindelse til brokeren
+	// Connect to the broker
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
@@ -48,7 +49,18 @@ func main() {
 	client.Subscribe("test/topic", 0, message_received)
 	logger.Debug("Successfully subscribed to topic: test/topic")
 
+	// Create a Gin router
 	r := gin.Default()
+
+	// Add CORS middleware
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000"}, // Change to your frontend's URL
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
+
 	r.GET("/insulin-alarm", insulin_alarm)
 	r.Run()
 }
@@ -72,14 +84,28 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 }
 
 func insulin_alarm(c *gin.Context) {
-
-	if blood_sugar > 20 {
+	if blood_sugar < 4 {
 		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar too high",
+			"message": "blood sugar is too low",
 		})
 		return
 	}
+
+	if blood_sugar < 9 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "blood sugar is normal",
+		})
+		return
+	}
+
+	if blood_sugar < 13 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "blood sugar is too high",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "blood sugar is okay",
+		"message": "blood sugar is critical",
 	})
 }

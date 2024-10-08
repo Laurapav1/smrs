@@ -30,3 +30,11 @@ services:
       - "8081:8080"
     depends_on:
       - broker
+
+  frontend:
+    build:
+      context: frontend
+    environment:
+      NEXT_PUBLIC_BASE_API_URL: alarm-api:8081
+    ports:
+      - "3000:3000"
