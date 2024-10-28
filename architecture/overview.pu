@@ -1,0 +1,13 @@
+@startuml System Architecture Diagram
+title System Architecture Diagram
+
+component "Data Generator" as DataGen
+component "Mosquitto Broker" as Mosquitto
+component "API" as API
+component "Frontend" as Frontend
+
+DataGen -> Mosquitto : Publish\nProtocol: MQTT over TCP\nPort: 1883
+Mosquitto -> API : Subscribe\nProtocol: MQTT over TCP\nPort: 1883
+API -> Frontend : HTTP Request\nProtocol: HTTP over TCP\nPort: 8080
+
+@enduml

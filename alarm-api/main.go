@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/opensearch-project/opensearch-go"
+	"github.com/opensearch-project/opensearch-go/opensearchapi"
 )
 
 var client MQTT.Client
@@ -17,19 +22,36 @@ var logger Logger
 
 type Logger struct {
 	logLevel string
+	logFunc  func(string)
 }
 
-func (l *Logger) Debug(str string, a ...any) {
+func (l *Logger) Debug(message string) {
 	if l.logLevel == "debug" {
-		fmt.Printf(str+"\n", a...)
+		l.logFunc(message)
 	}
 }
 
 func main() {
-	logger = Logger{
-		logLevel: os.Getenv("LOG_LEVEL"),
-	}
+	init_broker()
+	init_logger()
 
+	// Create a Gin router
+	r := gin.Default()
+
+	// Add CORS middleware
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000"}, // Change to your frontend's URL
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
+
+	r.GET("/insulin-alarm", insulin_alarm)
+	r.Run()
+}
+
+func init_broker() {
 	broker := "tcp://broker:1883"
 	clientID := "go_mqtt_subscriber"
 
@@ -48,21 +70,44 @@ func main() {
 
 	client.Subscribe("test/topic", 0, message_received)
 	logger.Debug("Successfully subscribed to topic: test/topic")
+}
 
-	// Create a Gin router
-	r := gin.Default()
+func init_logger() {
+	client, err := opensearch.NewClient(opensearch.Config{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		Addresses: []string{"https://opensearch:9200"},
+		Username:  "admin", // For testing only. Don't store credentials in code.
+		Password:  "Hej123456789!",
+	})
+	if err != nil {
+		panic(err)
+	}
 
-	// Add CORS middleware
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"}, // Change to your frontend's URL
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-	}))
+	logFunc := func(message string) {
+		fmt.Println(message)
+		document := strings.NewReader(fmt.Sprintf(`{
+			"message": "%s"
+		}`, message))
 
-	r.GET("/insulin-alarm", insulin_alarm)
-	r.Run()
+		req := opensearchapi.IndexRequest{
+			Index: "alarm-api-logs",
+			Body:  document,
+		}
+		res, err := req.Do(context.Background(), client)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if res.IsError() {
+			fmt.Println(res.String())
+		}
+	}
+
+	logger = Logger{
+		logLevel: os.Getenv("LOG_LEVEL"),
+		logFunc:  logFunc,
+	}
 }
 
 func message_received(client MQTT.Client, message MQTT.Message) {
@@ -80,7 +125,8 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 	blood_sugar = parsedBloodSugar
 
 	// Log the received blood sugar value
-	logger.Debug("Received blood sugar level: %f", blood_sugar)
+	logger.Debug(fmt.Sprintf("Received blood sugar level: %f", blood_sugar))
+
 }
 
 func insulin_alarm(c *gin.Context) {

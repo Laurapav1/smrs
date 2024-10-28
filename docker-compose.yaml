@@ -3,10 +3,9 @@ services:
     image: eclipse-mosquitto
     ports:
       - "1883:1883"
-      - "9001:9001"
     volumes:
       - ./mosquitto/config:/mosquitto/config/
-      - ./mosquitto/data:/mosquitto/data
+      - /mosquitto/data
     healthcheck:
       test: ["CMD", "mosquitto_sub", "-t", "test", "-C", "1", "-W", "5"]
       interval: 30s
@@ -30,6 +29,7 @@ services:
       - "8081:8080"
     depends_on:
       - broker
+      - opensearch
 
   frontend:
     build:
@@ -38,3 +38,26 @@ services:
       NEXT_PUBLIC_BASE_API_URL: alarm-api:8081
     ports:
       - "3000:3000"
+
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    environment:
+      node.name: opensearch-node1
+      cluster.initial_cluster_manager_nodes: opensearch-node1
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: Hej123456789!
+    ports:
+      - 9200:9200
+    healthcheck:
+      interval: 10s
+      retries: 80
+      test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: opensearch-dashboards
+    ports:
+      - 5601:5601
+    expose:
+      - "5601"
+    environment:
+      OPENSEARCH_HOSTS: '["https://opensearch:9200"]'

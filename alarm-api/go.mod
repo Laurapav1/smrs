@@ -7,6 +7,7 @@ require github.com/gin-gonic/gin v1.10.0
 require (
 	github.com/gin-contrib/cors v1.7.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/opensearch-project/opensearch-go v1.1.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
 )
 
