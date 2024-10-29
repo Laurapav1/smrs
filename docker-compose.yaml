@@ -34,10 +34,11 @@ services:
   frontend:
     build:
       context: frontend
-    environment:
-      NEXT_PUBLIC_BASE_API_URL: alarm-api:8081
+      args:
+        NEXT_PUBLIC_BASE_API_URL: http://alarm-api:8080
     ports:
       - "3000:3000"
+
 
   opensearch:
     image: opensearchproject/opensearch:latest

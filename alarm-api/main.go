@@ -40,7 +40,7 @@ func main() {
 
 	// Add CORS middleware
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"}, // Change to your frontend's URL
+		AllowOrigins:     []string{"*"}, // Temporarily allow all origins
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -86,7 +86,6 @@ func init_logger() {
 	}
 
 	logFunc := func(message string) {
-		fmt.Println(message)
 		document := strings.NewReader(fmt.Sprintf(`{
 			"message": "%s"
 		}`, message))
@@ -126,7 +125,6 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 
 	// Log the received blood sugar value
 	logger.Debug(fmt.Sprintf("Received blood sugar level: %f", blood_sugar))
-
 }
 
 func insulin_alarm(c *gin.Context) {

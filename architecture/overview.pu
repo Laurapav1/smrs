@@ -4,10 +4,14 @@ title System Architecture Diagram
 component "Data Generator" as DataGen
 component "Mosquitto Broker" as Mosquitto
 component "API" as API
+database "Database" as Db
+component "Database Dashboard" as DbDashboard
 component "Frontend" as Frontend
 
 DataGen -> Mosquitto : Publish\nProtocol: MQTT over TCP\nPort: 1883
 Mosquitto -> API : Subscribe\nProtocol: MQTT over TCP\nPort: 1883
+API -d-> Db : Save logs in database\nPort: 9200
+Db <-r- DbDashboard : Check database
 API -> Frontend : HTTP Request\nProtocol: HTTP over TCP\nPort: 8080
 
 @enduml

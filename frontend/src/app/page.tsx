@@ -51,7 +51,7 @@ export default function Home() {
 
   return (
     <div className={styles.page}>
-      <p>jkgkjlsfg{bloodSugar}</p>
+      <p>blood sugar: {bloodSugar}</p>
     </div>
   );
 }
