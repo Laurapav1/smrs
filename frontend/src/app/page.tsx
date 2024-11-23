@@ -6,29 +6,37 @@ import styles from "./page.module.css";
 
 // Define the type of the API response
 interface ApiResponse {
-  message: string;
+  level: number;
+  state: string;
 }
 
-export default function Home() {
-  const [bloodSugar, setBloodSugar] = useState<string>("");
+// Map states to background colors
+const stateColors: Record<string, string> = {
+  low: "#FFFF00", // Yellow
+  normal: "#00FF00", // Green
+  high: "#FFA500", // Orange
+  critical: "#FF0000", // Red
+};
 
-  console.log(process.env);
+export default function Home() {
+  const [bloodSugar, setBloodSugar] = useState<number | null>(null);
+  const [state, setState] = useState<string>("");
+
   useEffect(() => {
-    console.log(process.env.NEXT_PUBLIC_BASE_API_URL);
     // Create a CancelToken to cancel the request if the component unmounts
     const source = axios.CancelToken.source();
-    console.log(process.env);
 
     const fetchData = async () => {
       try {
         const response = await axios.get<ApiResponse>(
-          process.env.NEXT_PUBLIC_BASE_API_URL + "/insulin-alarm",
+          `${process.env.NEXT_PUBLIC_BASE_API_URL}/insulin-alarm`,
           {
             cancelToken: source.token,
             headers: { "Cache-Control": "no-cache" },
           }
         );
-        setBloodSugar(response.data.message);
+        setBloodSugar(response.data.level);
+        setState(response.data.state);
       } catch (error) {
         if (axios.isCancel(error)) {
           console.log("Request canceled:", error.message);
@@ -40,7 +48,7 @@ export default function Home() {
 
     // Fetch data immediately and set an interval to fetch every second
     fetchData();
-    const interval = setInterval(fetchData, 1000000);
+    const interval = setInterval(fetchData, 1000);
 
     // Cleanup: clear interval and cancel the request on component unmount
     return () => {
@@ -50,8 +58,17 @@ export default function Home() {
   }, []);
 
   return (
-    <div className={styles.page}>
-      <p>blood sugar: {bloodSugar}</p>
+    <div
+      className={styles.page}
+      style={{
+        backgroundColor: stateColors[state] || "#FFFFFF", // Default to white
+      }}
+    >
+      <h1 className={styles.title}>Blood Sugar Monitor</h1>
+      <p className={styles.value}>
+        Blood sugar level: {bloodSugar !== null ? bloodSugar : "Loading..."}
+      </p>
+      <p className={styles.state}>State: {state || "Loading..."}</p>
     </div>
   );
 }

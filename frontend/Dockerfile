@@ -1,9 +1,6 @@
 # Stage 1: Build Stage
 FROM node:18 AS builder
 
-# Define the build argument
-ARG NEXT_PUBLIC_BASE_API_URL
-
 # Set the working directory
 WORKDIR /app
 
@@ -12,9 +9,6 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm ci
-
-# Set the build-time environment variable
-ENV NEXT_PUBLIC_BASE_API_URL=$NEXT_PUBLIC_BASE_API_URL
 
 # Copy the rest of the application code
 COPY . .

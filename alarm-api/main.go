@@ -42,7 +42,7 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"}, // Temporarily allow all origins
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Cache-Control"}, // Include Cache-Control
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
@@ -127,29 +127,32 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 	logger.Debug(fmt.Sprintf("Received blood sugar level: %f", blood_sugar))
 }
 
+type InsulinAlarmResponse struct {
+	Level float64 `json:"level"` // JSON key for the blood sugar level
+	State string  `json:"state"` // JSON key for the blood sugar state
+}
+
 func insulin_alarm(c *gin.Context) {
-	if blood_sugar < 4 {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar is too low",
-		})
-		return
+	var state string
+
+	// Determine the blood sugar state based on the value
+	switch {
+	case blood_sugar < 4:
+		state = "low"
+	case blood_sugar < 9:
+		state = "normal"
+	case blood_sugar < 13:
+		state = "high"
+	default:
+		state = "critical"
 	}
 
-	if blood_sugar < 9 {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar is normal",
-		})
-		return
+	// Create a response object
+	response := InsulinAlarmResponse{
+		Level: blood_sugar,
+		State: state,
 	}
 
-	if blood_sugar < 13 {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar is too high",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "blood sugar is critical",
-	})
+	// Respond with the object serialized as JSON
+	c.JSON(http.StatusOK, response)
 }
