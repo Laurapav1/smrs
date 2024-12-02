@@ -3,7 +3,6 @@ module alarm-api
 go 1.23.1
 
 require (
-	github.com/davecgh/go-spew v1.1.1
 	github.com/gin-contrib/cors v1.7.2
 	github.com/gin-gonic/gin v1.10.0
 	github.com/opensearch-project/opensearch-go/v4 v4.3.0

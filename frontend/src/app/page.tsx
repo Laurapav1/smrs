@@ -138,6 +138,7 @@ export default function BloodSugarGraph() {
       <Line
         data={chartData}
         options={{
+          hover: {},
           animation: false,
           responsive: true,
           scales: {
