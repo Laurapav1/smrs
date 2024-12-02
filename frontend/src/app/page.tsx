@@ -13,7 +13,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import "chartjs-adapter-date-fns"; // Date adapter for time scale
+import "chartjs-adapter-date-fns";
 
 // Register required Chart.js components
 ChartJS.register(
@@ -27,10 +27,10 @@ ChartJS.register(
   Legend
 );
 
-// Define the type for each log entry
-interface LogEntry {
-  timestamp: string; // ISO 8601 string
-  blood_sugar: number; // Blood sugar value
+// Define the type for insulin alarm response
+interface InsulinAlarmResponse {
+  level: number; // Blood sugar value
+  state: string; // State of blood sugar (e.g., "low", "normal", etc.)
 }
 
 // Define the type for chart data
@@ -63,32 +63,33 @@ export default function BloodSugarGraph() {
     const fetchData = async () => {
       try {
         const response = await fetch(
-          process.env.NEXT_PUBLIC_BASE_API_URL + "/logs"
+          process.env.NEXT_PUBLIC_BASE_API_URL + "/insulin-alarm"
         );
-        const data: LogEntry[] = await response.json(); // Explicitly typed
+        const data: InsulinAlarmResponse = await response.json();
 
-        // Extract timestamps and blood sugar values
-        const timestamps = data.map((entry) => entry.timestamp);
-        const bloodSugarValues = data.map((entry) => entry.blood_sugar);
+        // Get the current timestamp
+        const timestamp = new Date().toISOString();
 
-        setChartData({
-          labels: timestamps,
+        // Add the new data point to the graph
+        setChartData((prevData) => ({
+          labels: [...prevData.labels, timestamp],
           datasets: [
             {
-              label: "Blood Sugar Levels",
-              data: bloodSugarValues,
-              borderColor: "rgba(75,192,192,1)",
-              backgroundColor: "rgba(75,192,192,0.2)",
-              fill: true,
+              ...prevData.datasets[0],
+              data: [...prevData.datasets[0].data, data.level],
             },
           ],
-        });
+        }));
       } catch (error) {
         console.error("Error fetching data:", error);
       }
     };
 
-    fetchData();
+    // Start polling every second
+    const intervalId = setInterval(fetchData, 1000);
+
+    // Cleanup interval on component unmount
+    return () => clearInterval(intervalId);
   }, []);
 
   return (
@@ -102,7 +103,7 @@ export default function BloodSugarGraph() {
             x: {
               type: "time", // Use the registered 'time' scale
               time: {
-                unit: "minute",
+                unit: "second",
               },
             },
             y: {
