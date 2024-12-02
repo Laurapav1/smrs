@@ -29,9 +29,8 @@ type Logger struct {
 }
 
 type LogEntry struct {
-	Message    string  `json:"message"`
-	BloodSugar float64 `json:"blood_sugar"`
-	Timestamp  string  `json:"timestamp"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
 }
 
 func (l *Logger) Debug(message string) {
@@ -58,7 +57,6 @@ func main() {
 	}))
 
 	r.GET("/insulin-alarm", insulin_alarm)
-	r.GET("/logs", fetch_logs)
 	r.Run()
 }
 
@@ -103,9 +101,8 @@ func init_opensearch_client() {
 func init_logger() {
 	logFunc := func(message string) {
 		entry := LogEntry{
-			Message:    message,
-			BloodSugar: bloodSugar,
-			Timestamp:  time.Now().Format(time.RFC3339),
+			Message:   message,
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
 		// Marshal the struct to JSON
@@ -117,34 +114,12 @@ func init_logger() {
 
 		// Index the JSON document in OpenSearch
 		_, err = opensearchClient.Index(context.Background(), opensearchapi.IndexReq{
-			Index: "blood-sugar-logs",
+			Index: "logs",
 			Body:  strings.NewReader(string(document)),
 		})
 		if err != nil {
 			fmt.Println("Error indexing document:", err)
 		}
-	}
-
-	_, err := opensearchClient.Indices.Create(context.Background(), opensearchapi.IndicesCreateReq{
-		Index: "blood-sugar-logs",
-		Body: strings.NewReader(`{
-			"mappings": {
-				"properties": {
-					"message": {
-						"type": "text"
-					},
-					"blood_sugar": {
-						"type": "float"
-					},
-					"timestamp": {
-						"type": "date"
-					}
-				}
-			}
-		}`),
-	})
-	if err != nil && !strings.Contains(err.Error(), "resource_already_exists_exception") {
-		panic(err)
 	}
 
 	logger = Logger{
@@ -199,30 +174,4 @@ func insulin_alarm(c *gin.Context) {
 
 	// Respond with the object serialized as JSON
 	c.JSON(http.StatusOK, response)
-}
-
-func fetch_logs(c *gin.Context) {
-	res, err := opensearchClient.Search(context.Background(), &opensearchapi.SearchReq{
-		Indices: []string{"blood-sugar-logs"},
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch logs"})
-		return
-	}
-
-	// Collect log entries
-	logs := []LogEntry{}
-	for _, hit := range res.Hits.Hits {
-		var entry LogEntry
-		if err := json.Unmarshal(hit.Source, &entry); err != nil {
-			fmt.Println("Error decoding hit:", err)
-			continue
-		}
-		logs = append(logs, entry)
-	}
-
-	fmt.Println("Fetched logs:", logs)
-
-	// Respond with the parsed logs
-	c.JSON(http.StatusOK, logs)
 }
