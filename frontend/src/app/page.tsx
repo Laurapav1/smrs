@@ -1,74 +1,116 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import axios from "axios";
-import styles from "./page.module.css";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  LineElement,
+  CategoryScale,
+  LinearScale,
+  TimeScale,
+  PointElement,
+  Filler,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import "chartjs-adapter-date-fns"; // Date adapter for time scale
 
-// Define the type of the API response
-interface ApiResponse {
-  level: number;
-  state: string;
+// Register required Chart.js components
+ChartJS.register(
+  LineElement,
+  CategoryScale,
+  LinearScale,
+  TimeScale,
+  PointElement,
+  Filler,
+  Tooltip,
+  Legend
+);
+
+// Define the type for each log entry
+interface LogEntry {
+  timestamp: string; // ISO 8601 string
+  blood_sugar: number; // Blood sugar value
 }
 
-// Map states to background colors
-const stateColors: Record<string, string> = {
-  low: "#FFFF00", // Yellow
-  normal: "#00FF00", // Green
-  high: "#FFA500", // Orange
-  critical: "#FF0000", // Red
-};
+// Define the type for chart data
+interface ChartData {
+  labels: string[]; // Timestamps
+  datasets: {
+    label: string;
+    data: number[];
+    borderColor: string;
+    backgroundColor: string;
+    fill: boolean;
+  }[];
+}
 
-export default function Home() {
-  const [bloodSugar, setBloodSugar] = useState<number | null>(null);
-  const [state, setState] = useState<string>("");
+export default function BloodSugarGraph() {
+  const [chartData, setChartData] = useState<ChartData>({
+    labels: [], // Timestamps
+    datasets: [
+      {
+        label: "Blood Sugar Levels",
+        data: [], // Blood sugar values
+        borderColor: "rgba(75,192,192,1)",
+        backgroundColor: "rgba(75,192,192,0.2)",
+        fill: true,
+      },
+    ],
+  });
 
   useEffect(() => {
-    // Create a CancelToken to cancel the request if the component unmounts
-    const source = axios.CancelToken.source();
-
     const fetchData = async () => {
       try {
-        const response = await axios.get<ApiResponse>(
-          `${process.env.NEXT_PUBLIC_BASE_API_URL}/insulin-alarm`,
-          {
-            cancelToken: source.token,
-            headers: { "Cache-Control": "no-cache" },
-          }
+        const response = await fetch(
+          process.env.NEXT_PUBLIC_BASE_API_URL + "/logs"
         );
-        setBloodSugar(response.data.level);
-        setState(response.data.state);
+        const data: LogEntry[] = await response.json(); // Explicitly typed
+
+        // Extract timestamps and blood sugar values
+        const timestamps = data.map((entry) => entry.timestamp);
+        const bloodSugarValues = data.map((entry) => entry.blood_sugar);
+
+        setChartData({
+          labels: timestamps,
+          datasets: [
+            {
+              label: "Blood Sugar Levels",
+              data: bloodSugarValues,
+              borderColor: "rgba(75,192,192,1)",
+              backgroundColor: "rgba(75,192,192,0.2)",
+              fill: true,
+            },
+          ],
+        });
       } catch (error) {
-        if (axios.isCancel(error)) {
-          console.log("Request canceled:", error.message);
-        } else {
-          console.error("Error fetching data:", error);
-        }
+        console.error("Error fetching data:", error);
       }
     };
 
-    // Fetch data immediately and set an interval to fetch every second
     fetchData();
-    const interval = setInterval(fetchData, 1000);
-
-    // Cleanup: clear interval and cancel the request on component unmount
-    return () => {
-      clearInterval(interval);
-      source.cancel("Component unmounted, request canceled");
-    };
   }, []);
 
   return (
-    <div
-      className={styles.page}
-      style={{
-        backgroundColor: stateColors[state] || "#FFFFFF", // Default to white
-      }}
-    >
-      <h1 className={styles.title}>Blood Sugar Monitor</h1>
-      <p className={styles.value}>
-        Blood sugar level: {bloodSugar !== null ? bloodSugar : "Loading..."}
-      </p>
-      <p className={styles.state}>State: {state || "Loading..."}</p>
+    <div>
+      <h2>Blood Sugar Levels</h2>
+      <Line
+        data={chartData}
+        options={{
+          responsive: true,
+          scales: {
+            x: {
+              type: "time", // Use the registered 'time' scale
+              time: {
+                unit: "minute",
+              },
+            },
+            y: {
+              beginAtZero: true,
+            },
+          },
+        }}
+      />
     </div>
   );
 }

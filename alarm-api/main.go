@@ -3,26 +3,35 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/opensearch-project/opensearch-go"
-	"github.com/opensearch-project/opensearch-go/opensearchapi"
+	"github.com/opensearch-project/opensearch-go/v4"
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 )
 
 var client MQTT.Client
-var blood_sugar float64 = 7
+var opensearchClient *opensearchapi.Client
+var bloodSugar float64 = 7
 var logger Logger
 
 type Logger struct {
 	logLevel string
 	logFunc  func(string)
+}
+
+type LogEntry struct {
+	Message    string  `json:"message"`
+	BloodSugar float64 `json:"blood_sugar"`
+	Timestamp  string  `json:"timestamp"`
 }
 
 func (l *Logger) Debug(message string) {
@@ -33,6 +42,7 @@ func (l *Logger) Debug(message string) {
 
 func main() {
 	init_broker()
+	init_opensearch_client()
 	init_logger()
 
 	// Create a Gin router
@@ -48,6 +58,7 @@ func main() {
 	}))
 
 	r.GET("/insulin-alarm", insulin_alarm)
+	r.GET("/logs", fetch_logs)
 	r.Run()
 }
 
@@ -72,35 +83,68 @@ func init_broker() {
 	logger.Debug("Successfully subscribed to topic: test/topic")
 }
 
-func init_logger() {
-	client, err := opensearch.NewClient(opensearch.Config{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		Addresses: []string{"https://opensearch:9200"},
-		Username:  "admin", // For testing only. Don't store credentials in code.
-		Password:  "Hej123456789!",
-	})
+func init_opensearch_client() {
+	var err error
+	opensearchClient, err = opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+			Addresses: []string{"https://opensearch:9200"},
+			Username:  "admin", // For testing only. Don't store credentials in code.
+			Password:  "Hej123456789!",
+		}},
+	)
 	if err != nil {
 		panic(err)
 	}
+}
 
+func init_logger() {
 	logFunc := func(message string) {
-		document := strings.NewReader(fmt.Sprintf(`{
-			"message": "%s"
-		}`, message))
+		entry := LogEntry{
+			Message:    message,
+			BloodSugar: bloodSugar,
+			Timestamp:  time.Now().Format(time.RFC3339),
+		}
 
-		req := opensearchapi.IndexRequest{
-			Index: "alarm-api-logs",
-			Body:  document,
-		}
-		res, err := req.Do(context.Background(), client)
+		// Marshal the struct to JSON
+		document, err := json.Marshal(entry)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Error marshaling log entry:", err)
+			return
 		}
-		if res.IsError() {
-			fmt.Println(res.String())
+
+		// Index the JSON document in OpenSearch
+		_, err = opensearchClient.Index(context.Background(), opensearchapi.IndexReq{
+			Index: "blood-sugar-logs",
+			Body:  strings.NewReader(string(document)),
+		})
+		if err != nil {
+			fmt.Println("Error indexing document:", err)
 		}
+	}
+
+	_, err := opensearchClient.Indices.Create(context.Background(), opensearchapi.IndicesCreateReq{
+		Index: "blood-sugar-logs",
+		Body: strings.NewReader(`{
+			"mappings": {
+				"properties": {
+					"message": {
+						"type": "text"
+					},
+					"blood_sugar": {
+						"type": "float"
+					},
+					"timestamp": {
+						"type": "date"
+					}
+				}
+			}
+		}`),
+	})
+	if err != nil && !strings.Contains(err.Error(), "resource_already_exists_exception") {
+		panic(err)
 	}
 
 	logger = Logger{
@@ -121,10 +165,10 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 	}
 
 	// Update the global blood_sugar variable
-	blood_sugar = parsedBloodSugar
+	bloodSugar = parsedBloodSugar
 
 	// Log the received blood sugar value
-	logger.Debug(fmt.Sprintf("Received blood sugar level: %f", blood_sugar))
+	logger.Debug(fmt.Sprintf("Received blood sugar level: %f", bloodSugar))
 }
 
 type InsulinAlarmResponse struct {
@@ -137,11 +181,11 @@ func insulin_alarm(c *gin.Context) {
 
 	// Determine the blood sugar state based on the value
 	switch {
-	case blood_sugar < 4:
+	case bloodSugar < 4:
 		state = "low"
-	case blood_sugar < 9:
+	case bloodSugar < 9:
 		state = "normal"
-	case blood_sugar < 13:
+	case bloodSugar < 13:
 		state = "high"
 	default:
 		state = "critical"
@@ -149,10 +193,36 @@ func insulin_alarm(c *gin.Context) {
 
 	// Create a response object
 	response := InsulinAlarmResponse{
-		Level: blood_sugar,
+		Level: bloodSugar,
 		State: state,
 	}
 
 	// Respond with the object serialized as JSON
 	c.JSON(http.StatusOK, response)
+}
+
+func fetch_logs(c *gin.Context) {
+	res, err := opensearchClient.Search(context.Background(), &opensearchapi.SearchReq{
+		Indices: []string{"blood-sugar-logs"},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch logs"})
+		return
+	}
+
+	// Collect log entries
+	logs := []LogEntry{}
+	for _, hit := range res.Hits.Hits {
+		var entry LogEntry
+		if err := json.Unmarshal(hit.Source, &entry); err != nil {
+			fmt.Println("Error decoding hit:", err)
+			continue
+		}
+		logs = append(logs, entry)
+	}
+
+	fmt.Println("Fetched logs:", logs)
+
+	// Respond with the parsed logs
+	c.JSON(http.StatusOK, logs)
 }

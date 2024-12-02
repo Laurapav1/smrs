@@ -7,11 +7,11 @@ services:
       - ./mosquitto/config:/mosquitto/config/
       - /mosquitto/data
     healthcheck:
-      test: ["CMD", "mosquitto_sub", "-t", "test", "-C", "1", "-W", "5"]
+      test: mosquitto_pub -t 'healthcheck' -m 'ping' -r && mosquitto_sub -t 'healthcheck' -C 1 -W 5
       interval: 30s
       timeout: 10s
       retries: 3
-  
+
   data-generator:
     build:
       context: ./data-generator
@@ -28,8 +28,10 @@ services:
     ports:
       - "8081:8080"
     depends_on:
-      - broker
-      - opensearch
+      broker:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
 
   frontend:
     build:
@@ -48,7 +50,7 @@ services:
     healthcheck:
       interval: 10s
       retries: 80
-      test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/
+      test: curl -u admin:Hej123456789! -k https://localhost:9200/
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:latest
