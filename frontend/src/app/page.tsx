@@ -91,16 +91,22 @@ export default function BloodSugarGraph() {
         // Get the current timestamp
         const timestamp = new Date().toISOString();
 
-        // Update the graph
-        setChartData((prevData) => ({
-          labels: [...prevData.labels, timestamp],
-          datasets: [
-            {
-              ...prevData.datasets[0],
-              data: [...prevData.datasets[0].data, data.level],
-            },
-          ],
-        }));
+        // Add the new data point and limit to 30 data points
+        setChartData((prevData) => {
+          const newLabels = [...prevData.labels, timestamp];
+          const newData = [...prevData.datasets[0].data, data.level];
+
+          // Limit the arrays to 30 entries
+          return {
+            labels: newLabels.slice(-30),
+            datasets: [
+              {
+                ...prevData.datasets[0],
+                data: newData.slice(-30),
+              },
+            ],
+          };
+        });
 
         // Update the current state
         setCurrentState(data);
@@ -132,6 +138,7 @@ export default function BloodSugarGraph() {
       <Line
         data={chartData}
         options={{
+          animation: false,
           responsive: true,
           scales: {
             x: {
