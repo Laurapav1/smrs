@@ -59,6 +59,27 @@ export default function BloodSugarGraph() {
     ],
   });
 
+  const [currentState, setCurrentState] = useState<InsulinAlarmResponse>({
+    level: 0,
+    state: "unknown",
+  });
+
+  // Helper function to get color based on state
+  const getStateColor = (state: string): string => {
+    switch (state) {
+      case "low":
+        return "blue";
+      case "normal":
+        return "green";
+      case "high":
+        return "orange";
+      case "critical":
+        return "red";
+      default:
+        return "gray";
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -70,7 +91,7 @@ export default function BloodSugarGraph() {
         // Get the current timestamp
         const timestamp = new Date().toISOString();
 
-        // Add the new data point to the graph
+        // Update the graph
         setChartData((prevData) => ({
           labels: [...prevData.labels, timestamp],
           datasets: [
@@ -80,6 +101,9 @@ export default function BloodSugarGraph() {
             },
           ],
         }));
+
+        // Update the current state
+        setCurrentState(data);
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -95,6 +119,16 @@ export default function BloodSugarGraph() {
   return (
     <div>
       <h2>Blood Sugar Levels</h2>
+      <p
+        style={{
+          fontWeight: "bold",
+          fontSize: "1.5rem",
+          color: getStateColor(currentState.state), // Apply color based on state
+        }}
+      >
+        Current State: {currentState.state.toUpperCase()} (
+        {currentState.level.toFixed(1)})
+      </p>
       <Line
         data={chartData}
         options={{
