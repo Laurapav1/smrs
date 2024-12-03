@@ -31,6 +31,7 @@ ChartJS.register(
 interface InsulinAlarmResponse {
   level: number; // Blood sugar value
   state: string; // State of blood sugar (e.g., "low", "normal", etc.)
+  age: number; // Age of the person
 }
 
 // Define the type for chart data
@@ -62,7 +63,10 @@ export default function BloodSugarGraph() {
   const [currentState, setCurrentState] = useState<InsulinAlarmResponse>({
     level: 0,
     state: "unknown",
+    age: 30, // Default age
   });
+
+  const [selectedAge, setSelectedAge] = useState<number>(30); // Default age
 
   // Helper function to get color based on state
   const getStateColor = (state: string): string => {
@@ -84,7 +88,7 @@ export default function BloodSugarGraph() {
     const fetchData = async () => {
       try {
         const response = await fetch(
-          process.env.NEXT_PUBLIC_BASE_API_URL + "/insulin-alarm"
+          `${process.env.NEXT_PUBLIC_BASE_API_URL}/insulin-alarm?age=${selectedAge}`
         );
         const data: InsulinAlarmResponse = await response.json();
 
@@ -120,11 +124,31 @@ export default function BloodSugarGraph() {
 
     // Cleanup interval on component unmount
     return () => clearInterval(intervalId);
-  }, []);
+  }, [selectedAge]); // Re-fetch data if the selected age changes
 
   return (
     <div>
       <h2>Blood Sugar Levels</h2>
+      <div style={{ marginBottom: "1rem" }}>
+        <label htmlFor="age-range" style={{ marginRight: "0.5rem" }}>
+          Select Your Age Range:
+        </label>
+        <select
+          id="age-range"
+          value={selectedAge}
+          onChange={(e) => setSelectedAge(Number(e.target.value))}
+          style={{
+            padding: "0.5rem",
+            fontSize: "1rem",
+            borderRadius: "4px",
+            border: "1px solid #ccc",
+          }}
+        >
+          <option value={10}>Under 18</option>
+          <option value={30}>18 - 65</option>
+          <option value={70}>Over 65</option>
+        </select>
+      </div>
       <p
         style={{
           fontWeight: "bold",
@@ -133,11 +157,16 @@ export default function BloodSugarGraph() {
         }}
       >
         Current State: {currentState.state.toUpperCase()} (
-        {currentState.level.toFixed(1)})
+        {currentState.level.toFixed(1)}) for Age {currentState.age}
       </p>
       <Line
         data={chartData}
         options={{
+          datasets: {
+            line: {
+              pointHitRadius: 50,
+            },
+          },
           hover: {},
           animation: false,
           responsive: true,
