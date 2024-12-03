@@ -1,57 +1,159 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import axios from "axios";
-import styles from "./page.module.css";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  LineElement,
+  CategoryScale,
+  LinearScale,
+  TimeScale,
+  PointElement,
+  Filler,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import "chartjs-adapter-date-fns";
 
-// Define the type of the API response
-interface ApiResponse {
-  message: string;
+// Register required Chart.js components
+ChartJS.register(
+  LineElement,
+  CategoryScale,
+  LinearScale,
+  TimeScale,
+  PointElement,
+  Filler,
+  Tooltip,
+  Legend
+);
+
+// Define the type for insulin alarm response
+interface InsulinAlarmResponse {
+  level: number; // Blood sugar value
+  state: string; // State of blood sugar (e.g., "low", "normal", etc.)
 }
 
-export default function Home() {
-  const [bloodSugar, setBloodSugar] = useState<string>("");
+// Define the type for chart data
+interface ChartData {
+  labels: string[]; // Timestamps
+  datasets: {
+    label: string;
+    data: number[];
+    borderColor: string;
+    backgroundColor: string;
+    fill: boolean;
+  }[];
+}
 
-  console.log(process.env);
+export default function BloodSugarGraph() {
+  const [chartData, setChartData] = useState<ChartData>({
+    labels: [], // Timestamps
+    datasets: [
+      {
+        label: "Blood Sugar Levels",
+        data: [], // Blood sugar values
+        borderColor: "rgba(75,192,192,1)",
+        backgroundColor: "rgba(75,192,192,0.2)",
+        fill: true,
+      },
+    ],
+  });
+
+  const [currentState, setCurrentState] = useState<InsulinAlarmResponse>({
+    level: 0,
+    state: "unknown",
+  });
+
+  // Helper function to get color based on state
+  const getStateColor = (state: string): string => {
+    switch (state) {
+      case "low":
+        return "blue";
+      case "normal":
+        return "green";
+      case "high":
+        return "orange";
+      case "critical":
+        return "red";
+      default:
+        return "gray";
+    }
+  };
+
   useEffect(() => {
-    console.log(process.env.NEXT_PUBLIC_BASE_API_URL);
-    // Create a CancelToken to cancel the request if the component unmounts
-    const source = axios.CancelToken.source();
-    console.log(process.env);
-
     const fetchData = async () => {
       try {
-        const response = await axios.get<ApiResponse>(
-          process.env.NEXT_PUBLIC_BASE_API_URL + "/insulin-alarm",
-          {
-            cancelToken: source.token,
-            headers: { "Cache-Control": "no-cache" },
-          }
+        const response = await fetch(
+          process.env.NEXT_PUBLIC_BASE_API_URL + "/insulin-alarm"
         );
-        setBloodSugar(response.data.message);
+        const data: InsulinAlarmResponse = await response.json();
+
+        // Get the current timestamp
+        const timestamp = new Date().toISOString();
+
+        // Add the new data point and limit to 30 data points
+        setChartData((prevData) => {
+          const newLabels = [...prevData.labels, timestamp];
+          const newData = [...prevData.datasets[0].data, data.level];
+
+          // Limit the arrays to 30 entries
+          return {
+            labels: newLabels.slice(-30),
+            datasets: [
+              {
+                ...prevData.datasets[0],
+                data: newData.slice(-30),
+              },
+            ],
+          };
+        });
+
+        // Update the current state
+        setCurrentState(data);
       } catch (error) {
-        if (axios.isCancel(error)) {
-          console.log("Request canceled:", error.message);
-        } else {
-          console.error("Error fetching data:", error);
-        }
+        console.error("Error fetching data:", error);
       }
     };
 
-    // Fetch data immediately and set an interval to fetch every second
-    fetchData();
-    const interval = setInterval(fetchData, 1000000);
+    // Start polling every second
+    const intervalId = setInterval(fetchData, 1000);
 
-    // Cleanup: clear interval and cancel the request on component unmount
-    return () => {
-      clearInterval(interval);
-      source.cancel("Component unmounted, request canceled");
-    };
+    // Cleanup interval on component unmount
+    return () => clearInterval(intervalId);
   }, []);
 
   return (
-    <div className={styles.page}>
-      <p>jkgkjlsfg{bloodSugar}</p>
+    <div>
+      <h2>Blood Sugar Levels</h2>
+      <p
+        style={{
+          fontWeight: "bold",
+          fontSize: "1.5rem",
+          color: getStateColor(currentState.state), // Apply color based on state
+        }}
+      >
+        Current State: {currentState.state.toUpperCase()} (
+        {currentState.level.toFixed(1)})
+      </p>
+      <Line
+        data={chartData}
+        options={{
+          hover: {},
+          animation: false,
+          responsive: true,
+          scales: {
+            x: {
+              type: "time", // Use the registered 'time' scale
+              time: {
+                unit: "second",
+              },
+            },
+            y: {
+              beginAtZero: true,
+            },
+          },
+        }}
+      />
     </div>
   );
 }

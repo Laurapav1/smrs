@@ -3,16 +3,15 @@ services:
     image: eclipse-mosquitto
     ports:
       - "1883:1883"
-      - "9001:9001"
     volumes:
       - ./mosquitto/config:/mosquitto/config/
-      - ./mosquitto/data:/mosquitto/data
+      - /mosquitto/data
     healthcheck:
-      test: ["CMD", "mosquitto_sub", "-t", "test", "-C", "1", "-W", "5"]
+      test: mosquitto_pub -t 'healthcheck' -m 'ping' -r && mosquitto_sub -t 'healthcheck' -C 1 -W 5
       interval: 30s
       timeout: 10s
       retries: 3
-  
+
   data-generator:
     build:
       context: ./data-generator
@@ -29,12 +28,36 @@ services:
     ports:
       - "8081:8080"
     depends_on:
-      - broker
+      broker:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
 
   frontend:
     build:
       context: frontend
-    environment:
-      NEXT_PUBLIC_BASE_API_URL: alarm-api:8081
     ports:
       - "3000:3000"
+
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    environment:
+      node.name: opensearch-node1
+      cluster.initial_cluster_manager_nodes: opensearch-node1
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: Hej123456789!
+    ports:
+      - 9200:9200
+    healthcheck:
+      interval: 10s
+      retries: 80
+      test: curl -u admin:Hej123456789! -k https://localhost:9200/
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: opensearch-dashboards
+    ports:
+      - 5601:5601
+    expose:
+      - "5601"
+    environment:
+      OPENSEARCH_HOSTS: '["https://opensearch:9200"]'

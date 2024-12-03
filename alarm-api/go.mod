@@ -2,11 +2,16 @@ module alarm-api
 
 go 1.23.1
 
-require github.com/gin-gonic/gin v1.10.0
+require (
+	github.com/gin-contrib/cors v1.7.2
+	github.com/gin-gonic/gin v1.10.0
+	github.com/opensearch-project/opensearch-go/v4 v4.3.0
+)
 
 require (
-	github.com/gin-contrib/cors v1.7.2 // indirect
+	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
 )
 

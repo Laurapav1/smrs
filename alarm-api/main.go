@@ -1,35 +1,66 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/opensearch-project/opensearch-go/v4"
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 )
 
 var client MQTT.Client
-var blood_sugar float64 = 7
+var opensearchClient *opensearchapi.Client
+var bloodSugar float64 = 7
 var logger Logger
 
 type Logger struct {
 	logLevel string
+	logFunc  func(string)
 }
 
-func (l *Logger) Debug(str string, a ...any) {
+type LogEntry struct {
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
+}
+
+func (l *Logger) Debug(message string) {
 	if l.logLevel == "debug" {
-		fmt.Printf(str+"\n", a...)
+		l.logFunc(message)
 	}
 }
 
 func main() {
-	logger = Logger{
-		logLevel: os.Getenv("LOG_LEVEL"),
-	}
+	init_broker()
+	init_opensearch_client()
+	init_logger()
 
+	// Create a Gin router
+	r := gin.Default()
+
+	// Add CORS middleware
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"}, // Temporarily allow all origins
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Cache-Control"}, // Include Cache-Control
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
+
+	r.GET("/insulin-alarm", insulin_alarm)
+	r.Run()
+}
+
+func init_broker() {
 	broker := "tcp://broker:1883"
 	clientID := "go_mqtt_subscriber"
 
@@ -48,21 +79,53 @@ func main() {
 
 	client.Subscribe("test/topic", 0, message_received)
 	logger.Debug("Successfully subscribed to topic: test/topic")
+}
 
-	// Create a Gin router
-	r := gin.Default()
+func init_opensearch_client() {
+	var err error
+	opensearchClient, err = opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+			Addresses: []string{"https://opensearch:9200"},
+			Username:  "admin", // For testing only. Don't store credentials in code.
+			Password:  "Hej123456789!",
+		}},
+	)
+	if err != nil {
+		panic(err)
+	}
+}
 
-	// Add CORS middleware
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"}, // Change to your frontend's URL
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-	}))
+func init_logger() {
+	logFunc := func(message string) {
+		entry := LogEntry{
+			Message:   message,
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
 
-	r.GET("/insulin-alarm", insulin_alarm)
-	r.Run()
+		// Marshal the struct to JSON
+		document, err := json.Marshal(entry)
+		if err != nil {
+			fmt.Println("Error marshaling log entry:", err)
+			return
+		}
+
+		// Index the JSON document in OpenSearch
+		_, err = opensearchClient.Index(context.Background(), opensearchapi.IndexReq{
+			Index: "logs",
+			Body:  strings.NewReader(string(document)),
+		})
+		if err != nil {
+			fmt.Println("Error indexing document:", err)
+		}
+	}
+
+	logger = Logger{
+		logLevel: os.Getenv("LOG_LEVEL"),
+		logFunc:  logFunc,
+	}
 }
 
 func message_received(client MQTT.Client, message MQTT.Message) {
@@ -77,35 +140,67 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 	}
 
 	// Update the global blood_sugar variable
-	blood_sugar = parsedBloodSugar
+	bloodSugar = parsedBloodSugar
 
 	// Log the received blood sugar value
-	logger.Debug("Received blood sugar level: %f", blood_sugar)
+	logger.Debug(fmt.Sprintf("Received blood sugar level: %f", bloodSugar))
+}
+
+type InsulinAlarmResponse struct {
+	Level float64 `json:"level"`
+	State string  `json:"state"`
+	Age   int     `json:"age"`
+}
+
+type Thresholds struct {
+	Low      float64
+	Normal   float64
+	High     float64
+	Critical float64
+}
+
+func determineState(level float64, thresholds Thresholds) string {
+	switch {
+	case level < thresholds.Low:
+		return "low"
+	case level < thresholds.Normal:
+		return "normal"
+	case level < thresholds.High:
+		return "high"
+	default:
+		return "critical"
+	}
+}
+
+func getThresholdsByAge(age int) Thresholds {
+	switch {
+	case age < 18:
+		// Children thresholds
+		return Thresholds{Low: 3.5, Normal: 7.8, High: 11.1, Critical: 11.1}
+	case age <= 65:
+		// Adults thresholds
+		return Thresholds{Low: 4, Normal: 9, High: 13, Critical: 13}
+	default:
+		// Elderly thresholds
+		return Thresholds{Low: 4.5, Normal: 10, High: 14, Critical: 14}
+	}
 }
 
 func insulin_alarm(c *gin.Context) {
-	if blood_sugar < 4 {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar is too low",
-		})
-		return
+	// Parse age from query parameters
+	ageStr := c.Query("age")
+	age := 30
+	if ageStr != "" {
+		fmt.Sscanf(ageStr, "%d", &age)
 	}
 
-	if blood_sugar < 9 {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar is normal",
-		})
-		return
+	// Create a response object
+	response := InsulinAlarmResponse{
+		Level: bloodSugar,
+		State: determineState(bloodSugar, getThresholdsByAge(age)),
+		Age:   age,
 	}
 
-	if blood_sugar < 13 {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "blood sugar is too high",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "blood sugar is critical",
-	})
+	// Respond with the object serialized as JSON
+	c.JSON(http.StatusOK, response)
 }
