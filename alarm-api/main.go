@@ -147,29 +147,58 @@ func message_received(client MQTT.Client, message MQTT.Message) {
 }
 
 type InsulinAlarmResponse struct {
-	Level float64 `json:"level"` // JSON key for the blood sugar level
-	State string  `json:"state"` // JSON key for the blood sugar state
+	Level float64 `json:"level"`
+	State string  `json:"state"`
+	Age   int     `json:"age"`
+}
+
+type Thresholds struct {
+	Low      float64
+	Normal   float64
+	High     float64
+	Critical float64
+}
+
+func determineState(level float64, thresholds Thresholds) string {
+	switch {
+	case level < thresholds.Low:
+		return "low"
+	case level < thresholds.Normal:
+		return "normal"
+	case level < thresholds.High:
+		return "high"
+	default:
+		return "critical"
+	}
+}
+
+func getThresholdsByAge(age int) Thresholds {
+	switch {
+	case age < 18:
+		// Children thresholds
+		return Thresholds{Low: 3.5, Normal: 7.8, High: 11.1, Critical: 11.1}
+	case age <= 65:
+		// Adults thresholds
+		return Thresholds{Low: 4, Normal: 9, High: 13, Critical: 13}
+	default:
+		// Elderly thresholds
+		return Thresholds{Low: 4.5, Normal: 10, High: 14, Critical: 14}
+	}
 }
 
 func insulin_alarm(c *gin.Context) {
-	var state string
-
-	// Determine the blood sugar state based on the value
-	switch {
-	case bloodSugar < 4:
-		state = "low"
-	case bloodSugar < 9:
-		state = "normal"
-	case bloodSugar < 13:
-		state = "high"
-	default:
-		state = "critical"
+	// Parse age from query parameters
+	ageStr := c.Query("age")
+	age := 30
+	if ageStr != "" {
+		fmt.Sscanf(ageStr, "%d", &age)
 	}
 
 	// Create a response object
 	response := InsulinAlarmResponse{
 		Level: bloodSugar,
-		State: state,
+		State: determineState(bloodSugar, getThresholdsByAge(age)),
+		Age:   age,
 	}
 
 	// Respond with the object serialized as JSON
